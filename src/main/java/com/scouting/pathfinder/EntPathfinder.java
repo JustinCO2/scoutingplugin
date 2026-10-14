@@ -18,6 +18,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Player;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
@@ -90,6 +91,8 @@ public class EntPathfinder
 	private List<Ent> live = Collections.emptyList();
 	private Ent target;
 	private boolean pathIsOurs;
+	/** When the player logged in on the forestry world, by the relay's clock; 0 while not logged in there. */
+	private long loggedInSince;
 
 	@Inject
 	EntPathfinder(ScoutingPlugin plugin, ScoutingConfig config)
@@ -119,6 +122,9 @@ public class EntPathfinder
 		overlayManager.add(overlay);
 		running = true;
 		connectionTask = executor.scheduleWithFixedDelay(this::updateRelayConnection, 1, 1, TimeUnit.SECONDS);
+
+		// Switched on mid-session, ents count from now: the actual login time is not known.
+		clientThread.invoke(() -> loggedInSince = isLoggedInOnForestryWorld() ? serverNow() : 0);
 	}
 
 	private void stop()
@@ -135,6 +141,7 @@ public class EntPathfinder
 			tracker.reset();
 			live = Collections.emptyList();
 			target = null;
+			loggedInSince = 0;
 			clearPath();
 		});
 	}
@@ -179,12 +186,29 @@ public class EntPathfinder
 		long now = serverNow();
 		for (Ent ent : tracker.accept(entCalls, now))
 		{
-			if (config.entNotify() && !isIgnored(ent))
+			if (config.entNotify() && isEligible(ent) && !isIgnored(ent))
 			{
 				notifier.notify("Ent called: " + ent.getPlaceName() + " (" + ent.secondsRemaining(now) + "s left)");
 			}
 		}
 		refresh();
+	}
+
+	/** A region load or a brief disconnect is not a new login; logging out or hopping away is. */
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		if (isLoggedInOnForestryWorld())
+		{
+			if (loggedInSince == 0)
+			{
+				loggedInSince = serverNow();
+			}
+		}
+		else if (event.getGameState() == GameState.LOGIN_SCREEN || event.getGameState() == GameState.HOPPING)
+		{
+			loggedInSince = 0;
+		}
 	}
 
 	@Subscribe
@@ -202,12 +226,13 @@ public class EntPathfinder
 
 	/**
 	 * Rebuild the list and point the path at its first entry: the oldest ent not yet reached, and
-	 * the closest to ending. Ignored islands are filtered here, so toggling one applies at once.
+	 * the closest to ending. Filtering here rather than in the tracker lets a late report still find
+	 * its ent, and makes an island setting apply at once.
 	 */
 	private void refresh()
 	{
 		live = tracker.getActive(serverNow()).stream()
-			.filter(e -> !e.isReached() && !isIgnored(e))
+			.filter(e -> !e.isReached() && isEligible(e) && !isIgnored(e))
 			.collect(Collectors.toList());
 
 		Ent next = live.isEmpty() ? null : live.get(0);
@@ -225,6 +250,17 @@ public class EntPathfinder
 		{
 			pathTo(next);
 		}
+	}
+
+	/** Only an ent that spawned while the player was logged in on the world can reward them. */
+	private boolean isEligible(Ent ent)
+	{
+		return loggedInSince > 0 && ent.getFirstSeen() >= loggedInSince;
+	}
+
+	private boolean isLoggedInOnForestryWorld()
+	{
+		return client.getGameState() == GameState.LOGGED_IN && client.getWorld() == FORESTRY_WORLD;
 	}
 
 	private boolean isIgnored(Ent ent)
