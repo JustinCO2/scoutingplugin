@@ -19,4 +19,5 @@ screen with their time left. Reaching an ent moves the path on to the next one. 
 since you logged in on the world are used, as you must be logged in when an ent spawns to be eligible.
 
 Calls arrive from a relay that reads the scouting feed once on behalf of every player, rather than
-each player polling it. The relay is only connected while the feature is on and you are on world 444.
+each player polling it. The relay is only connected while the feature is on and you are on world 444,
+plus ten minutes after you leave so that hops and relogs reuse one connection.

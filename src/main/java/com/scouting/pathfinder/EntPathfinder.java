@@ -46,8 +46,11 @@ public class EntPathfinder
 	/** Wider than Shortest Path's own default of 5, so the path moves on before it clears itself. */
 	private static final int ARRIVAL_TILES = 7;
 
-	/** Rides out hops, relogs and loading screens without opening a fresh relay connection. */
-	private static final long DISCONNECT_GRACE_MILLIS = 60_000;
+	/**
+	 * How long the relay connection outlives leaving the world, so hops, breaks and relogs reuse one
+	 * connection. An idle connection costs the relay nothing; each new one counts against its quota.
+	 */
+	private static final long DISCONNECT_GRACE_MILLIS = 10 * 60_000;
 
 	private static final String ENT = "ENT";
 	private static final String SHORTEST_PATH = "shortestpath";
